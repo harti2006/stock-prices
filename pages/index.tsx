@@ -176,6 +176,10 @@ function findExchangeConfig(instrument: Instrument, exchangeCode?: string): Prom
             configApi = `https://api.onvista.de/api/v1/derivatives/ISIN:${instrument.isin}/snapshot`
             break;
 
+        case "FUND":
+            configApi = `https://api.onvista.de/api/v1/funds/ISIN:${instrument.isin}/snapshot`
+            break;
+
         default:
             throw new Error(`type '${instrument.type}' not implemented.`)
     }
