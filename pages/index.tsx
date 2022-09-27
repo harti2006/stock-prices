@@ -1,7 +1,112 @@
 import type {GetServerSideProps, NextPage} from 'next'
 import Head from 'next/head'
-import styles from '../styles/Home.module.css'
+import styles from '../styles/StockPriceTable.module.css'
 
+
+type Exchange = {
+    codeExchange: string,
+    idNotation: number,
+}
+
+type Instrument = {
+    isin: string,
+    id: string,
+    type: string,
+}
+
+type Quote = {
+    date: string,
+    close: number,
+    low: number,
+    high: number,
+
+}
+
+type StockPriceTableProps = {
+    quotes: Quote[],
+    instrument: Instrument,
+    exchange: Exchange,
+}
+
+const StockPriceTable: NextPage<StockPriceTableProps> = ({quotes}) => {
+    const rows = []
+    for (let quote of quotes) {
+        const dateString = quote.date;
+        rows.push(<tr key={dateString}>
+            <td>{dateString}</td>
+            <td>{quote.close}</td>
+            <td>{quote.low}</td>
+            <td>{quote.high}</td>
+        </tr>)
+    }
+
+    return (
+        <div className={styles.container}>
+            <Head>
+                <title>Stock Prices</title>
+                <link rel="icon" href="/favicon.ico"/>
+            </Head>
+
+            <main className={styles.main}>
+                <h1 className={styles.title}>Stock Prices</h1>
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Datum</th>
+                        <th>Schluss</th>
+                        <th>Tief</th>
+                        <th>Hoch</th>
+                    </tr>
+                    </thead>
+                    <tbody>{rows}</tbody>
+                </table>
+            </main>
+        </div>
+    )
+}
+
+// noinspection JSUnusedGlobalSymbols
+export const getServerSideProps: GetServerSideProps<StockPriceTableProps> = async (context) => {
+    const {isin, exchange: exchangeCode} = context.query
+
+    if (isin && typeof isin === "string") {
+        const instrument = await search(isin);
+        if (instrument === null) {
+            return {notFound: true}
+        }
+
+        const exchange = await findExchangeConfig(instrument, exchangeCode as string)
+        if (exchange === null) {
+            return {notFound: true}
+        }
+
+        const range = "M3"
+        const startDate = formatISODate(monthsAgo(3))
+        const quotes = await fetchJson(`https://api.onvista.de/api/v1/instruments/FUND/${instrument.id}/eod_history?idNotation=${exchange.idNotation}&range=${range}&startDate=${startDate}`)
+            .then(({datetimeLast, last, high, low}: EodHistory) =>
+                datetimeLast.map((datetime, i) => {
+                    const q: Quote = {
+                        date: formatISODate(new Date(datetime * 1000)),
+                        close: last[i],
+                        high: high[i],
+                        low: low[i]
+                    }
+                    return q
+                })
+            ).catch((error) => {
+                console.error(`Fetching quotes failed`, error)
+                return null
+            })
+
+        if (quotes === null) {
+            return {notFound: true}
+        }
+
+        return {props: {instrument, exchange, quotes}}
+    } else {
+        return {notFound: true}
+    }
+}
 
 type SearchResult = {
     isin: string,
@@ -22,23 +127,14 @@ type EodHistory = {
     high: number[],
 }
 
-type Exchange = {
-    codeExchange: string,
-    idNotation: number,
+function formatISODate(date: Date): string {
+    return date.toISOString().split("T")[0]
 }
 
-type Instrument = {
-    isin: string,
-    id: string,
-    type: string,
-}
-
-type Quote = {
-    date: string,
-    close: number,
-    low: number,
-    high: number,
-
+function monthsAgo(months: number, date: Date = new Date()): Date {
+    const result = new Date(date)
+    result.setMonth(date.getMonth() - months)
+    return result
 }
 
 function fetchJson(url: string): Promise<any> {
@@ -111,100 +207,4 @@ function findExchangeConfig(instrument: Instrument, exchangeCode?: string): Prom
         })
 }
 
-type HomeProps = {
-    quotes: Quote[],
-    instrument: Instrument,
-    exchange: Exchange,
-}
-
-const Home: NextPage<HomeProps> = ({quotes}) => {
-    const rows = []
-    for (let quote of quotes) {
-        const dateString = quote.date;
-        rows.push(<tr key={dateString}>
-            <td>{dateString}</td>
-            <td>{quote.close}</td>
-            <td>{quote.low}</td>
-            <td>{quote.high}</td>
-        </tr>)
-    }
-
-    return (
-        <div className={styles.container}>
-            <Head>
-                <title>Stock Prices</title>
-                <link rel="icon" href="/favicon.ico"/>
-            </Head>
-
-            <main className={styles.main}>
-                <h1 className={styles.title}>Stock Prices</h1>
-                <table>
-                    <thead>
-                    <tr>
-                        <th>Datum</th>
-                        <th>Schluss</th>
-                        <th>Tief</th>
-                        <th>Hoch</th>
-                    </tr>
-                    </thead>
-                    <tbody>{rows}</tbody>
-                </table>
-            </main>
-        </div>
-    )
-}
-
-function formatISODate(date: Date): string {
-    return date.toISOString().split("T")[0]
-}
-
-function monthsAgo(months: number, date: Date = new Date()): Date {
-    const result = new Date(date)
-    result.setMonth(date.getMonth() - months)
-    return result
-}
-
-// noinspection JSUnusedGlobalSymbols
-export const getServerSideProps: GetServerSideProps<HomeProps> = async (context) => {
-    const {isin, exchange: exchangeCode} = context.query
-
-    if (isin && typeof isin === "string") {
-        const instrument = await search(isin);
-        if (instrument === null) {
-            return {notFound: true}
-        }
-
-        const exchange = await findExchangeConfig(instrument, exchangeCode as string)
-        if (exchange === null) {
-            return {notFound: true}
-        }
-
-        const range = "M3"
-        const startDate = formatISODate(monthsAgo(3))
-        const quotes = await fetchJson(`https://api.onvista.de/api/v1/instruments/FUND/${instrument.id}/eod_history?idNotation=${exchange.idNotation}&range=${range}&startDate=${startDate}`)
-            .then(({datetimeLast, last, high, low}: EodHistory) =>
-                datetimeLast.map((datetime, i) => {
-                    const q: Quote = {
-                        date: formatISODate(new Date(datetime * 1000)),
-                        close: last[i],
-                        high: high[i],
-                        low: low[i]
-                    }
-                    return q
-                })
-            ).catch((error) => {
-                console.error(`Fetching quotes failed`, error)
-                return null
-            })
-
-        if (quotes === null) {
-            return {notFound: true}
-        }
-
-        return {props: {instrument, exchange, quotes}}
-    } else {
-        return {notFound: true}
-    }
-}
-
-export default Home
+export default StockPriceTable
